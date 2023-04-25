@@ -188,7 +188,7 @@ export function writeback(){
 
 # 机器的内部状态
 
-```js {all|1-2|3-9|10|11-16|17-18|all}
+```js {all|1|2-7|8|9-13|14|15-16|all}
 export let instructions = []
 // 0 初始
 // 1 发射
