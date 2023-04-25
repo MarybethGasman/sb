@@ -118,10 +118,7 @@ level: 2
 
 # 流水线循环
 
-- 发射（Issue）
-- 读操作数（readOperand）
-- 执行（execute）
-- 写回（writeback）
+- 发射（Issue）读操作数（readOperand）执行（execute）写回（writeback）
 
 ```js {all|6|10|11|12|6,10,11,12|all}
 let cycle = 0
@@ -192,9 +189,7 @@ export function writeback(){
 # 机器的内部状态
 
 ```js {all|1-2|3-9|10|11-16|17-18|all}
-// 指令队列
 export let instructions = []
-// 指令状态
 // 0 初始
 // 1 发射
 // 2 解码
@@ -202,7 +197,6 @@ export let instructions = []
 // 4 写回
 export let istates = new Array(10).fill(0)
 export let istatesfinished = new Array(10).fill(0)
-// 运算器状态
 // 0 整数单元
 // 1 加法和减法单元
 // 2 乘法单元
@@ -210,31 +204,7 @@ export let istatesfinished = new Array(10).fill(0)
 export let functionUnitStates = []
 // 下一个将要issue的指令
 let next = 0;
-```
-
----
-
-# 机器的内部状态
-
-```js {all|1-2|3-9|10|11-16|17-18|all}
-// 指令队列
-export let instructions = []
-// 指令状态
-// 0 初始
-// 1 发射
-// 2 解码
-// 3 执行
-// 4 写回
-export let istates = new Array(10).fill(0)
-export let istatesfinished = new Array(10).fill(0)
-// 运算器状态
-// 0 整数单元
-// 1 加法和减法单元
-// 2 乘法单元
-// 3 除法单元
-export let functionUnitStates = []
-// 下一个将要issue的指令
-let next = 0;
+let result = []
 ```
 
 ---
@@ -253,6 +223,9 @@ export function issue() {
         return
     }
     let [op, dst, src1, src2] = i.split(' ')
+    if(result[+dst[1]] !== undefined) {
+        return
+    }
     switch (op) {
         //整数单元
         case 'LD':
@@ -377,7 +350,6 @@ export function decode() {
 
 ```js {all} {'maxHeight': '400px'}
 export function execute() {
-    // console.log("execute", istates);
     // 找到所有正在执行的指令
     const set = istatesfinished.map((v, i) => {
         if (v === 2) {
@@ -407,7 +379,6 @@ export function execute() {
 
 ```js {all} {'maxHeight': '400px'}
 export function writeback() {
-    // console.log("writeback", istates);
     // 找到所有执行完的指令
     const set = istatesfinished.map((v, i) => {
         if (v === 3) {
@@ -416,9 +387,7 @@ export function writeback() {
         return -1
     }).filter(v => v >= 0)
 
-
     set.forEach(j => {
-
         let [op, dst, src1, src2] = instructions[j].split(' ')
         if (instructions.filter((_, i) => i < j && istatesfinished[i] < 2)
             .filter(istruction => {
@@ -511,6 +480,7 @@ export function writeback() {
             remain: 1,
             istate: 4,
         })
+        result[+dst[1]] = undefined
     })
 }
 ```
@@ -535,24 +505,11 @@ export function doPendingJobs() {
 ---
 
 
-# It's all about knowledge
+# Online vs Offline
 
-Use code snippets and get the highlighting directly![^1]
+## 在线算法和离线算法
 
-```ts {all|2|1-6|9|all}
-interface User {
-  id: number
-  firstName: string
-  lastName: string
-  role: string
-}
-
-function updateUser(id: number, update: User) {
-  const user = getUser(id)
-  const newUser = { ...user, ...update }
-  saveUser(id, newUser)
-}
-```
+- 流水线不知道
 
 
 ---
@@ -560,7 +517,7 @@ function updateUser(id: number, update: User) {
 # 流水线循环
 
 
-```js {all} {'maxHeight': '400px'}
+```js {all|7|15|27|39|all} {'maxHeight': '400px'}
 let instructions = code.value
     .split('\n')
     .filter(s => s.length !== 0)
@@ -617,99 +574,33 @@ const nextCycle = () => {
 # 第一个函数——发射（issue）
 
 ```js {all} {'maxHeight': '400px'}
-export function issue() {
-    if (istates
-        .filter(v => v === 4)
-        .length === instructions.length) {
-        throw Error("程序结束")
+export function issue(instruction) {
+    if (instruction === undefined) {
+        return undefined
     }
-    const i = instructions[next]
-    if (i === undefined) {
-        return
+    let [op, dst, src1, src2] = instruction.split(' ')
+    op = op === "SUB" ? "ADD" : op
+    src1 = +src1?.slice(1)
+    src2 = +src2?.slice(1)
+    dst = +dst?.slice(1)
+    if (result[dst] !== undefined
+        || units.get(op) === 0) {
+        return undefined
     }
-    let [op, dst, src1, src2] = i.split(' ')
-    switch (op) {
-        //整数单元
-        case 'LD':
-            if (typeof functionUnitStates[0] === 'object'
-                 && functionUnitStates[0].busy) {
-                return
-            }
-            functionUnitStates[0] = {
-                busy: true,
-                op: 'LD',
-                src1: src1,
-                // dst一定是寄存器，我们直接记录号码0-14
-                dst: +dst[1],
-            }
-            break;
-        //乘法单元
-        case 'MUL':
-            if (typeof functionUnitStates[2] === 'object' && functionUnitStates[2].busy) {
-                return
-            }
-            functionUnitStates[2] = {
-                busy: true,
-                op: 'MUL',
-                src1: src1,
-                src2: src2,
-                // dst一定是寄存器，我们直接记录号码0-14
-                dst: +dst[1],
-            }
-            break;
-        //加法单元
-        case 'ADD':
-            if (typeof functionUnitStates[1] === 'object' && functionUnitStates[1].busy) {
-                return
-            }
-            functionUnitStates[1] = {
-                busy: true,
-                op: 'ADD',
-                src1: src1,
-                src2: src2,
-                // dst一定是寄存器，我们直接记录号码0-14
-                dst: +dst[1],
-            }
-            break;
-        //减法单元
-        case 'SUB':
-            if (typeof functionUnitStates[1] === 'object' && functionUnitStates[1].busy) {
-                return
-            }
-            functionUnitStates[1] = {
-                busy: true,
-                op: 'SUB',
-                src1: src1,
-                src2: src2,
-                // dst一定是寄存器，我们直接记录号码0-14
-                dst: +dst[1],
-            }
-            break;
-        //除法单元
-        case 'DIV':
-            if (typeof functionUnitStates[3] === 'object' && functionUnitStates[3].busy) {
-                return
-            }
-            functionUnitStates[3] = {
-                busy: true,
-                op: 'DIV',
-                src1: src1,
-                src2: src2,
-                // dst一定是寄存器，我们直接记录号码0-14
-                dst: +dst[1],
-            }
-            break;
 
-        default:
-            break;
+    units.set(op, units.get(op) - 1)
+    let f = {
+        op: op,
+        src1: src1,
+        src2: src2,
+        dst: dst,
+        readDone: false,
+        done: false
     }
-    istates[next] = 1
-    iStateFinishedPendingJob.push({
-        iindex: next,
-        remain: 1,
-        istate: 1,
-    })
-    next++
+    functionUnitStates.push(f)
+
+    result[dst] = f
+    return instruction
 }
 ```
 
@@ -718,31 +609,28 @@ export function issue() {
 # 第二个函数——读操作数（readOperand）
 
 ```js {all} {'maxHeight': '400px'}
-export function decode() {
-    // 找到所有可以进行decode的指令
-    const set = istatesfinished.map((v, i) => {
-        if (v === 1) {
-            return i
+export function readOperand(roJobs) {
+    let over = []
+
+    roJobs.forEach(instruction => {
+        let [op, dst, src1, src2] = instruction.split(' ')
+        src1 = +src1?.slice(1)
+        src2 = +src2?.slice(1)
+        dst = +dst?.slice(1)
+        for (let i = 0; i < functionUnitStates.length; i++) {
+            let f = functionUnitStates[i]
+            if (f === result[dst]) {
+                break
+            }
+            if ((f.dst === src1 || f.dst === src2)
+                && f.done === false) {
+                return undefined
+            }
         }
-        return -1
-    }).filter(v => v >= 0)
-    set.forEach((j) => {
-        let [op, dst, src1, src2] = instructions[j].split(' ')
-        if (instructions.filter((_, i) => 
-            i < j && istatesfinished[i] < 4)
-                .filter(istruction => {
-                let [opPrev, dstPrev, src1Prev, src2Prev] = istruction.split(' ')
-                return src1 === dstPrev || src2 === dstPrev
-            }).length > 0) {
-            return
-        }
-        istates[j] = 2
-        iStateFinishedPendingJob.push({
-            iindex: j,
-            remain: 1,
-            istate: 2,
-        })
+
+        over.push(instruction)
     })
+    return over
 }
 ```
 
@@ -751,29 +639,21 @@ export function decode() {
 # 第三个函数——执行（execute）
 
 ```js {all} {'maxHeight': '400px'}
-export function execute() {
-    // console.log("execute", istates);
-    // 找到所有正在执行的指令
-    const set = istatesfinished.map((v, i) => {
-        if (v === 2) {
-            return i
-        }
-        return -1
-    }).filter(v => v >= 0)
+export function execute(executeJobs) {
+    let over = []
 
-    set.forEach(i => {
-        if (iStateFinishedPendingJob.map(v => v.iindex).includes(i)) {
-            return
-        }
-        const [op, dst, src1, src2] = instructions[i].split(' ')
-        istates[i] = 3
-        iStateFinishedPendingJob.push({
-            iindex: i,
-            remain: time.get(op),
-            istate: 3,
-        })
+    executeJobs.forEach(instruction => {
+        let [op, dst, src1, src2] = instruction.split(' ')
+        src1 = +src1?.slice(1)
+        src2 = +src2?.slice(1)
+        dst = +dst?.slice(1)
+        result[dst].readDone = true
+        over.push(instruction)
     })
+
+    return over
 }
+
 ```
 
 ---
@@ -781,112 +661,31 @@ export function execute() {
 # 第四个函数——writeback（写回）
 
 ```js {all} {'maxHeight': '400px'}
-export function writeback() {
-    // console.log("writeback", istates);
-    // 找到所有执行完的指令
-    const set = istatesfinished.map((v, i) => {
-        if (v === 3) {
-            return i
+export function writeback(wbJobs) {
+    let over = []
+    wbJobs.forEach(instruction => {
+        let [op, dst, src1, src2] = instruction.split(' ')
+        op = op === "SUB" ? "ADD" : op
+        src1 = +src1?.slice(1)
+        src2 = +src2?.slice(1)
+        dst = +dst?.slice(1)
+
+        for (let i = 0; i < functionUnitStates.length; i++) {
+            let f = functionUnitStates[i]
+            if (f === result[dst]) {
+                break
+            }
+            if ((f.src1 === dst || f.src2 === dst)
+                && f.readDone === false) {
+                return undefined
+            }
         }
-        return -1
-    }).filter(v => v >= 0)
-
-
-    set.forEach(j => {
-
-        let [op, dst, src1, src2] = instructions[j].split(' ')
-        if (instructions.filter((_, i) => i < j && istatesfinished[i] < 2)
-            .filter(istruction => {
-                let [opPrev, dstPrev, src1Prev, src2Prev] = istruction.split(' ')
-                return src1Prev === dst || src2Prev === dst
-            }).length > 0) {
-            return
-        }
-        switch (op) {
-            case 'ADD':
-                if (src1[0] === 'R') {
-                    src1 = R[+src1[1]]
-                }
-                if (src2[0] === 'R') {
-                    src2 = R[+src2[1]]
-                }
-                if (src1.length === 1) {
-                    src1 = +src1;
-                }
-                if (src2.length === 1) {
-                    src2 = +src2;
-                }
-                R[+dst[1]] = src1 + src2
-                functionUnitStates[1] = undefined
-                break;
-            case 'SUB':
-                if (src1[0] === 'R') {
-                    src1 = R[+src1[1]]
-                }
-                if (src2[0] === 'R') {
-                    src2 = R[+src2[1]]
-                }
-                if (src1.length === 1) {
-                    src1 = +src1;
-                }
-                if (src2.length === 1) {
-                    src2 = +src2;
-                }
-                R[+dst[1]] = src1 - src2
-                functionUnitStates[1] = undefined
-                break;
-
-            case 'MUL':
-                if (src1[0] === 'R') {
-                    src1 = R[+src1[1]]
-                }
-                if (src2[0] === 'R') {
-                    src2 = R[+src2[1]]
-                }
-                if (src1.length === 1) {
-                    src1 = +src1;
-                }
-                if (src2.length === 1) {
-                    src2 = +src2;
-                }
-                functionUnitStates[2] = undefined
-
-                R[+dst[1]] = src1 * src2
-                break;
-            case 'DIV':
-                if (src1[0] === 'R') {
-                    src1 = R[+src1[1]]
-                }
-                if (src2[0] === 'R') {
-                    src2 = R[+src2[1]]
-                }
-                if (src1.length === 1) {
-                    src1 = +src1;
-                }
-                if (src2.length === 1) {
-                    src2 = +src2;
-                }
-                functionUnitStates[3] = undefined
-                R[+dst[1]] = src1 / src2
-                break;
-            case 'LD':
-                if (src1[0] === 'R') {
-                    src1 = R[+src1[1]]
-                }
-                if (src1.length === 1) {
-                    src1 = +src1;
-                }
-                functionUnitStates[0] = undefined
-                R[+dst[1]] = src1
-                break;
-        }
-        istates[j] = 4
-        iStateFinishedPendingJob.push({
-            iindex: j,
-            remain: 1,
-            istate: 4,
-        })
+        over.push(instruction)
+        units.set(op, units.get(op) + 1)
+        result[dst].done = true
+        result[dst] = undefined
     })
+    return over
 }
 ```
 
@@ -914,7 +713,6 @@ export function writeback(wbJobs) {
                 return undefined
             }
         }
-        // console.log("写回", instruction, functionUnitStates);
         over.push(instruction)
         units.set(op, units.get(op) + 1)
         result[dst].done = true
